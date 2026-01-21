@@ -36,7 +36,8 @@ type RedfishCollector struct {
 }
 
 // NewRedfishCollector return RedfishCollector
-func NewRedfishCollector(host string, username string, password string) *RedfishCollector {
+// enabledCollectors specifies which collectors to enable. If empty, all collectors are enabled.
+func NewRedfishCollector(host string, username string, password string, enabledCollectors []string) *RedfishCollector {
 	var collectors map[string]prometheus.Collector
 
 	targetLogger := slog.Default().With(slog.String("target", host))
@@ -45,14 +46,27 @@ func NewRedfishCollector(host string, username string, password string) *Redfish
 	if err != nil {
 		slog.Error("error creating redfish client", slog.Any("error", err))
 	} else {
-		chassisCollector := NewChassisCollector(redfishClient, targetLogger)
-		systemCollector := NewSystemCollector(redfishClient, targetLogger)
-		managerCollector := NewManagerCollector(redfishClient, targetLogger)
+		collectors = make(map[string]prometheus.Collector)
 
-		collectors = map[string]prometheus.Collector{
-			"chassis": chassisCollector,
-			"system":  systemCollector,
-			"manager": managerCollector,
+		// If no collectors specified, enable all
+		if len(enabledCollectors) == 0 {
+			enabledCollectors = []string{"chassis", "system", "manager"}
+		}
+
+		// Build a set for quick lookup
+		enabledSet := make(map[string]bool)
+		for _, c := range enabledCollectors {
+			enabledSet[c] = true
+		}
+
+		if enabledSet["chassis"] {
+			collectors["chassis"] = NewChassisCollector(redfishClient, targetLogger)
+		}
+		if enabledSet["system"] {
+			collectors["system"] = NewSystemCollector(redfishClient, targetLogger)
+		}
+		if enabledSet["manager"] {
+			collectors["manager"] = NewManagerCollector(redfishClient, targetLogger)
 		}
 	}
 

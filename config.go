@@ -10,9 +10,10 @@ import (
 )
 
 type Config struct {
-	Hosts    map[string]HostConfig `yaml:"hosts"`
-	Groups   map[string]HostConfig `yaml:"groups"`
-	Loglevel string                `yaml:"loglevel"`
+	Hosts      map[string]HostConfig `yaml:"hosts"`
+	Groups     map[string]HostConfig `yaml:"groups"`
+	Collectors []string              `yaml:"collectors"`
+	Loglevel   string                `yaml:"loglevel"`
 }
 
 type SafeConfig struct {
@@ -21,8 +22,9 @@ type SafeConfig struct {
 }
 
 type HostConfig struct {
-	Username string `yaml:"username"`
-	Password string `yaml:"password"`
+	Username   string   `yaml:"username"`
+	Password   string   `yaml:"password"`
+	Collectors []string `yaml:"collectors"`
 }
 
 // Read exporter config from file
@@ -56,19 +58,33 @@ func (sc *SafeConfig) ReloadConfig(configFile string) error {
 func (sc *SafeConfig) HostConfigForTarget(target string) (*HostConfig, error) {
 	sc.Lock()
 	defer sc.Unlock()
-	if hostConfig, ok := sc.Config.Hosts[target]; ok {
-		return &HostConfig{
-			Username: hostConfig.Username,
-			Password: hostConfig.Password,
-		}, nil
+
+	var hostConfig HostConfig
+	var found bool
+
+	if hc, ok := sc.Config.Hosts[target]; ok {
+		hostConfig = hc
+		found = true
+	} else if hc, ok := sc.Config.Hosts["default"]; ok {
+		hostConfig = hc
+		found = true
 	}
-	if hostConfig, ok := sc.Config.Hosts["default"]; ok {
-		return &HostConfig{
-			Username: hostConfig.Username,
-			Password: hostConfig.Password,
-		}, nil
+
+	if !found {
+		return &HostConfig{}, fmt.Errorf("no credentials found for target %s", target)
 	}
-	return &HostConfig{}, fmt.Errorf("no credentials found for target %s", target)
+
+	// Use per-host collectors if set, otherwise fall back to global collectors
+	collectors := hostConfig.Collectors
+	if len(collectors) == 0 {
+		collectors = sc.Config.Collectors
+	}
+
+	return &HostConfig{
+		Username:   hostConfig.Username,
+		Password:   hostConfig.Password,
+		Collectors: collectors,
+	}, nil
 }
 
 // HostConfigForGroup checks the configuration for a matching group config and returns the configured HostConfig for
@@ -77,7 +93,16 @@ func (sc *SafeConfig) HostConfigForGroup(group string) (*HostConfig, error) {
 	sc.Lock()
 	defer sc.Unlock()
 	if hostConfig, ok := sc.Config.Groups[group]; ok {
-		return &hostConfig, nil
+		// Use per-group collectors if set, otherwise fall back to global collectors
+		collectors := hostConfig.Collectors
+		if len(collectors) == 0 {
+			collectors = sc.Config.Collectors
+		}
+		return &HostConfig{
+			Username:   hostConfig.Username,
+			Password:   hostConfig.Password,
+			Collectors: collectors,
+		}, nil
 	}
 	return &HostConfig{}, fmt.Errorf("no credentials found for group %s", group)
 }
