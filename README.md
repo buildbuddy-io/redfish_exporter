@@ -124,7 +124,10 @@ Since the fork:
 
 ## Why a Fork?
 
-We decided to fork the existing exorter for several reasons:
+This is a fork of [FlxPeters/redfish_exporter](https://github.com/FlxPeters/redfish_exporter),
+which itself is a fork of [jenningsloy318/redfish_exporter](https://github.com/jenningsloy318/redfish_exporter).
+
+FlxPeters forked the original exporter for several reasons:
 
 - Slog instead of Apexlog: Just a detail, but since we have the `slog` package in Go 1.21 available, it should be used.
 - Remove log severity metrics: This is not a good metric from my point of view.
@@ -132,10 +135,15 @@ We decided to fork the existing exorter for several reasons:
 - Updated dependencies: The upstream repository has several outdated libraries. We want to stay up to date.
 - Tests: The original code base had no tests. We aim to provide tests for, at least, all new code.
 
+BuildBuddy forked FlxPeters' version to add:
+
+- Configurable collector filtering: Enable/disable specific collectors (chassis, system, manager) via config file, both globally and per-host. This significantly speeds up scrapes when only PSU/power metrics are needed.
+
 ## Acknowledgement
 
 * https://github.com/stmcginnis/gofish
 * https://github.com/jenningsloy318/redfish_exporter
+* https://github.com/FlxPeters/redfish_exporter
 
 [1]: https://github.com/jenningsloy318/redfish_exporter/issues/7
 [4]: https://github.com/prometheus/prometheus/wiki/Default-port-allocations
