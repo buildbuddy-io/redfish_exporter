@@ -9,7 +9,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stmcginnis/gofish"
-	"github.com/stmcginnis/gofish/redfish"
+	redfish "github.com/stmcginnis/gofish/schemas"
 )
 
 // ChassisSubsystem is the chassis subsystem
@@ -170,13 +170,17 @@ func (c *ChassisCollector) Collect(ch chan<- prometheus.Metric) {
 				for _, chassisFan := range chassisFans {
 					go parseChassisFan(ch, chassisID, chassisFan, wg2)
 				}
+				wg.Wait()
+				wg2.Wait()
 			}
 
 			chassisPowerInfo, err := chassis.Power()
 			if err != nil {
 				chassisLogger.Error("error getting power data from chassis", slog.String("operation", "chassis.Power()"), slog.Any("error", err))
 			} else if chassisPowerInfo == nil {
-				chassisLogger.Info("no power data found", slog.String("operation", "chassis.Power()"))
+				// Redfish 2020.4 deprecated the Chassis Power resource in favor of
+				// PowerSubsystem, and newer BMC firmware only exposes the latter.
+				c.collectPowerSubsystem(ch, chassisLogger, chassis)
 			} else {
 				// power voltages
 				chassisPowerInfoVoltages := chassisPowerInfo.Voltages
@@ -201,6 +205,9 @@ func (c *ChassisCollector) Collect(ch chan<- prometheus.Metric) {
 				for _, chassisPowerInfoPowerSupply := range chassisPowerInfoPowerSupplies {
 					go parseChassisPowerInfoPowerSupply(ch, chassisID, chassisPowerInfoPowerSupply, wg5)
 				}
+				wg3.Wait()
+				wg4.Wait()
+				wg5.Wait()
 			}
 
 			// process NetapAdapter
@@ -275,24 +282,24 @@ func parseChassisTemperature(ch chan<- prometheus.Metric, chassisID string, chas
 	}
 
 	chassisTemperatureReadingCelsius := chassisTemperature.ReadingCelsius
-	ch <- prometheus.MustNewConstMetric(chassisMetrics["chassis_temperature_celsius"].desc, prometheus.GaugeValue, float64(chassisTemperatureReadingCelsius), chassisTemperatureLabelvalues...)
+	ch <- prometheus.MustNewConstMetric(chassisMetrics["chassis_temperature_celsius"].desc, prometheus.GaugeValue, derefFloat64(chassisTemperatureReadingCelsius), chassisTemperatureLabelvalues...)
 }
 
-func parseChassisFan(ch chan<- prometheus.Metric, chassisID string, chassisFan redfish.Fan, wg *sync.WaitGroup) {
+func parseChassisFan(ch chan<- prometheus.Metric, chassisID string, chassisFan redfish.ThermalFan, wg *sync.WaitGroup) {
 	defer wg.Done()
 	chassisFanID := chassisFan.MemberID
 	chassisFanName := chassisFan.Name
 	chassisFanStaus := chassisFan.Status
 	chassisFanStausHealth := chassisFanStaus.Health
 	chassisFanStausState := chassisFanStaus.State
-	chassisFanRPM := float64(chassisFan.Reading)
+	chassisFanRPM := derefInt(chassisFan.Reading)
 	chassisFanUnit := chassisFan.ReadingUnits
-	chassisFanRPMLowerCriticalThreshold := float64(chassisFan.LowerThresholdCritical)
-	chassisFanRPMUpperCriticalThreshold := float64(chassisFan.UpperThresholdCritical)
-	chassisFanRPMLowerFatalThreshold := float64(chassisFan.LowerThresholdFatal)
-	chassisFanRPMUpperFatalThreshold := float64(chassisFan.UpperThresholdFatal)
-	chassisFanRPMMin := float64(chassisFan.MinReadingRange)
-	chassisFanRPMMax := float64(chassisFan.MaxReadingRange)
+	chassisFanRPMLowerCriticalThreshold := derefInt(chassisFan.LowerThresholdCritical)
+	chassisFanRPMUpperCriticalThreshold := derefInt(chassisFan.UpperThresholdCritical)
+	chassisFanRPMLowerFatalThreshold := derefInt(chassisFan.LowerThresholdFatal)
+	chassisFanRPMUpperFatalThreshold := derefInt(chassisFan.UpperThresholdFatal)
+	chassisFanRPMMin := derefInt(chassisFan.MinReadingRange)
+	chassisFanRPMMax := derefInt(chassisFan.MaxReadingRange)
 
 	chassisFanPercentage := chassisFanRPM
 	if chassisFanUnit != redfish.PercentReadingUnits {
@@ -338,7 +345,7 @@ func parseChassisPowerInfoVoltage(ch chan<- prometheus.Metric, chassisID string,
 	if chassisPowerInfoVoltageStateValue, ok := parseCommonStatusState(chassisPowerInfoVoltageState); ok {
 		ch <- prometheus.MustNewConstMetric(chassisMetrics["chassis_power_voltage_state"].desc, prometheus.GaugeValue, chassisPowerInfoVoltageStateValue, chassisPowerVoltageLabelvalues...)
 	}
-	ch <- prometheus.MustNewConstMetric(chassisMetrics["chassis_power_voltage_volts"].desc, prometheus.GaugeValue, float64(chassisPowerInfoVoltageNameReadingVolts), chassisPowerVoltageLabelvalues...)
+	ch <- prometheus.MustNewConstMetric(chassisMetrics["chassis_power_voltage_volts"].desc, prometheus.GaugeValue, derefFloat32(chassisPowerInfoVoltageNameReadingVolts), chassisPowerVoltageLabelvalues...)
 }
 
 func parseChassisPowerInfoPowerControl(ch chan<- prometheus.Metric, chassisID string, chassisPowerInfoPowerControl redfish.PowerControl, wg *sync.WaitGroup) {
@@ -347,7 +354,7 @@ func parseChassisPowerInfoPowerControl(ch chan<- prometheus.Metric, chassisID st
 	id := chassisPowerInfoPowerControl.MemberID
 	pm := chassisPowerInfoPowerControl.PowerMetrics
 	chassisPowerVoltageLabelvalues := []string{"power_wattage", chassisID, name, id}
-	ch <- prometheus.MustNewConstMetric(chassisMetrics["chassis_power_average_consumed_watts"].desc, prometheus.GaugeValue, float64(pm.AverageConsumedWatts), chassisPowerVoltageLabelvalues...)
+	ch <- prometheus.MustNewConstMetric(chassisMetrics["chassis_power_average_consumed_watts"].desc, prometheus.GaugeValue, derefFloat32(pm.AverageConsumedWatts), chassisPowerVoltageLabelvalues...)
 }
 
 func parseChassisPowerInfoPowerSupply(ch chan<- prometheus.Metric, chassisID string, chassisPowerInfoPowerSupply redfish.PowerSupply, wg *sync.WaitGroup) {
@@ -378,11 +385,11 @@ func parseChassisPowerInfoPowerSupply(ch chan<- prometheus.Metric, chassisID str
 	if chassisPowerInfoPowerSupplyHealthValue, ok := parseCommonStatusHealth(chassisPowerInfoPowerSupplyHealth); ok {
 		ch <- prometheus.MustNewConstMetric(chassisMetrics["chassis_power_powersupply_health"].desc, prometheus.GaugeValue, chassisPowerInfoPowerSupplyHealthValue, chassisPowerSupplyLabelvalues...)
 	}
-	ch <- prometheus.MustNewConstMetric(chassisMetrics["chassis_power_powersupply_power_efficiency_percentage"].desc, prometheus.GaugeValue, float64(chassisPowerInfoPowerSupplyEfficiencyPercent), chassisPowerSupplyLabelvalues...)
-	ch <- prometheus.MustNewConstMetric(chassisMetrics["chassis_power_powersupply_last_power_output_watts"].desc, prometheus.GaugeValue, float64(chassisPowerInfoPowerSupplyLastPowerOutputWatts), chassisPowerSupplyLabelvalues...)
-	ch <- prometheus.MustNewConstMetric(chassisMetrics["chassis_power_powersupply_power_capacity_watts"].desc, prometheus.GaugeValue, float64(chassisPowerInfoPowerSupplyPowerCapacityWatts), chassisPowerSupplyLabelvalues...)
-	ch <- prometheus.MustNewConstMetric(chassisMetrics["chassis_power_powersupply_power_input_watts"].desc, prometheus.GaugeValue, float64(chassisPowerInfoPowerSupplyPowerInputWatts), chassisPowerSupplyLabelvalues...)
-	ch <- prometheus.MustNewConstMetric(chassisMetrics["chassis_power_powersupply_power_output_watts"].desc, prometheus.GaugeValue, float64(chassisPowerInfoPowerSupplyPowerOutputWatts), chassisPowerSupplyLabelvalues...)
+	ch <- prometheus.MustNewConstMetric(chassisMetrics["chassis_power_powersupply_power_efficiency_percentage"].desc, prometheus.GaugeValue, derefFloat64(chassisPowerInfoPowerSupplyEfficiencyPercent), chassisPowerSupplyLabelvalues...)
+	ch <- prometheus.MustNewConstMetric(chassisMetrics["chassis_power_powersupply_last_power_output_watts"].desc, prometheus.GaugeValue, derefFloat32(chassisPowerInfoPowerSupplyLastPowerOutputWatts), chassisPowerSupplyLabelvalues...)
+	ch <- prometheus.MustNewConstMetric(chassisMetrics["chassis_power_powersupply_power_capacity_watts"].desc, prometheus.GaugeValue, derefFloat32(chassisPowerInfoPowerSupplyPowerCapacityWatts), chassisPowerSupplyLabelvalues...)
+	ch <- prometheus.MustNewConstMetric(chassisMetrics["chassis_power_powersupply_power_input_watts"].desc, prometheus.GaugeValue, derefFloat32(chassisPowerInfoPowerSupplyPowerInputWatts), chassisPowerSupplyLabelvalues...)
+	ch <- prometheus.MustNewConstMetric(chassisMetrics["chassis_power_powersupply_power_output_watts"].desc, prometheus.GaugeValue, derefFloat32(chassisPowerInfoPowerSupplyPowerOutputWatts), chassisPowerSupplyLabelvalues...)
 }
 
 func parseNetworkAdapter(ch chan<- prometheus.Metric, chassisID string, networkAdapter *redfish.NetworkAdapter, wg *sync.WaitGroup) error {
@@ -425,7 +432,7 @@ func parseNetworkPort(ch chan<- prometheus.Metric, chassisID string, networkPort
 	networkPhysicalPortNumber := networkPort.PhysicalPortNumber
 	chassisNetworkPortLabelValues := []string{"network_port", chassisID, networkAdapterName, networkAdapterID, networkPortName, networkPortID, string(networkPortLinkType), networkPortLinkSpeed, string(networkPortConnectionType), networkPhysicalPortNumber}
 
-	if networkLinkStatusValue, ok := parsePortLinkStatus(networkLinkStatus); ok {
+	if networkLinkStatusValue, ok := parsePortLinkStatus(redfish.PortLinkStatus(networkLinkStatus)); ok {
 		ch <- prometheus.MustNewConstMetric(chassisMetrics["chassis_network_port_link_state"].desc, prometheus.GaugeValue, networkLinkStatusValue, chassisNetworkPortLabelValues...)
 	}
 
@@ -435,4 +442,111 @@ func parseNetworkPort(ch chan<- prometheus.Metric, chassisID string, networkPort
 	if networkPortHealthStateValue, ok := parseCommonStatusHealth(networkPortHealthState); ok {
 		ch <- prometheus.MustNewConstMetric(chassisMetrics["chassis_network_port_health_state"].desc, prometheus.GaugeValue, networkPortHealthStateValue, chassisNetworkPortLabelValues...)
 	}
+}
+
+// collectPowerSubsystem emits power supply metrics from the PowerSubsystem
+// resource (Redfish 2020.4+). Collect uses it when a chassis does not expose
+// the deprecated Power resource, which is the case on newer BMC firmware (for
+// example recent Supermicro boards). Metric names and labels match the ones
+// produced from the Power resource so existing dashboards and alerts keep
+// working.
+func (c *ChassisCollector) collectPowerSubsystem(ch chan<- prometheus.Metric, chassisLogger *slog.Logger, chassis *redfish.Chassis) {
+	powerSubsystem, err := chassis.PowerSubsystem()
+	if err != nil {
+		chassisLogger.Error("error getting power subsystem from chassis", slog.String("operation", "chassis.PowerSubsystem()"), slog.Any("error", err))
+		return
+	}
+	if powerSubsystem == nil {
+		chassisLogger.Info("no power data found", slog.String("operation", "chassis.Power()"))
+		return
+	}
+
+	// gofish decodes the members of the PowerSupplies collection with its
+	// legacy Power.PowerSupply type, which lacks the link to the PowerSupply
+	// metrics, so the list is only used for the member URIs and each supply is
+	// fetched again as a PowerSupplyUnit.
+	powerSupplies, err := powerSubsystem.PowerSupplies()
+	if err != nil {
+		chassisLogger.Error("error getting power supplies from power subsystem", slog.String("operation", "powerSubsystem.PowerSupplies()"), slog.Any("error", err))
+		return
+	}
+	if len(powerSupplies) == 0 {
+		chassisLogger.Info("no power supplies found", slog.String("operation", "powerSubsystem.PowerSupplies()"))
+		return
+	}
+
+	wg := &sync.WaitGroup{}
+	wg.Add(len(powerSupplies))
+	for _, powerSupply := range powerSupplies {
+		go func(uri string) {
+			defer wg.Done()
+			powerSupplyUnit, err := redfish.GetPowerSupplyUnit(powerSubsystem.GetClient(), uri)
+			if err != nil {
+				chassisLogger.Error("error getting power supply", slog.String("operation", "GetPowerSupplyUnit()"), slog.String("uri", uri), slog.Any("error", err))
+				return
+			}
+			parseChassisPowerSupplyUnit(ch, chassisLogger, chassis.ID, powerSupplyUnit)
+		}(powerSupply.ODataID)
+	}
+	wg.Wait()
+}
+
+func parseChassisPowerSupplyUnit(ch chan<- prometheus.Metric, logger *slog.Logger, chassisID string, powerSupply *redfish.PowerSupplyUnit) {
+	powerSupplyName := powerSupply.Name
+	powerSupplyID := powerSupply.ID
+	if powerSupplyID == "" {
+		logger.Debug("PowerSupply ID is empty, using serial number as ID")
+		powerSupplyID = powerSupply.SerialNumber
+		if powerSupplyID == "" {
+			logger.Error("PowerSupply ID and serial number empty - skipping power supply")
+			return
+		}
+	}
+	powerSupplyLabelValues := []string{"power_supply", chassisID, powerSupplyName, powerSupplyID}
+
+	if stateValue, ok := parseCommonStatusState(powerSupply.Status.State); ok {
+		ch <- prometheus.MustNewConstMetric(chassisMetrics["chassis_power_powersupply_state"].desc, prometheus.GaugeValue, stateValue, powerSupplyLabelValues...)
+	}
+	if healthValue, ok := parseCommonStatusHealth(powerSupply.Status.Health); ok {
+		ch <- prometheus.MustNewConstMetric(chassisMetrics["chassis_power_powersupply_health"].desc, prometheus.GaugeValue, healthValue, powerSupplyLabelValues...)
+	}
+	if powerSupply.PowerCapacityWatts != nil {
+		ch <- prometheus.MustNewConstMetric(chassisMetrics["chassis_power_powersupply_power_capacity_watts"].desc, prometheus.GaugeValue, *powerSupply.PowerCapacityWatts, powerSupplyLabelValues...)
+	}
+	// The PowerSupply schema rates efficiency per load level instead of the
+	// single value of the legacy schema; report the best rating.
+	if efficiencyPercent, ok := maxEfficiencyPercent(powerSupply.EfficiencyRatings); ok {
+		ch <- prometheus.MustNewConstMetric(chassisMetrics["chassis_power_powersupply_power_efficiency_percentage"].desc, prometheus.GaugeValue, efficiencyPercent, powerSupplyLabelValues...)
+	}
+
+	metrics, err := powerSupply.Metrics()
+	if err != nil {
+		logger.Error("error getting power supply metrics", slog.String("operation", "powerSupply.Metrics()"), slog.String("power_supply", powerSupplyName), slog.Any("error", err))
+		return
+	}
+	if metrics == nil {
+		return
+	}
+	// Readings the BMC does not report are omitted rather than exported as 0,
+	// so that "no input power" style alerts do not fire spuriously.
+	if reading := metrics.InputPowerWatts.Reading; reading != nil {
+		ch <- prometheus.MustNewConstMetric(chassisMetrics["chassis_power_powersupply_power_input_watts"].desc, prometheus.GaugeValue, *reading, powerSupplyLabelValues...)
+	}
+	if reading := metrics.OutputPowerWatts.Reading; reading != nil {
+		ch <- prometheus.MustNewConstMetric(chassisMetrics["chassis_power_powersupply_power_output_watts"].desc, prometheus.GaugeValue, *reading, powerSupplyLabelValues...)
+		// The legacy LastPowerOutputWatts property has no equivalent in the
+		// PowerSupply schema; report the current output so dashboards built
+		// on it keep working.
+		ch <- prometheus.MustNewConstMetric(chassisMetrics["chassis_power_powersupply_last_power_output_watts"].desc, prometheus.GaugeValue, *reading, powerSupplyLabelValues...)
+	}
+}
+
+func maxEfficiencyPercent(ratings []redfish.EfficiencyRating) (float64, bool) {
+	best, found := 0.0, false
+	for _, rating := range ratings {
+		if rating.EfficiencyPercent != nil && (!found || *rating.EfficiencyPercent > best) {
+			best, found = *rating.EfficiencyPercent, true
+		}
+	}
+	return best, found
 }
