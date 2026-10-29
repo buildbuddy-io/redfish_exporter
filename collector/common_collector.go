@@ -5,7 +5,7 @@ import (
 	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/stmcginnis/gofish/redfish"
+	redfish "github.com/stmcginnis/gofish/schemas"
 )
 
 const (
@@ -52,4 +52,35 @@ func parseLogService(ch chan<- prometheus.Metric, metrics map[string]Metric, sub
 	}
 
 	return
+}
+
+// gofish models optional numeric properties as pointers; nil means the BMC did
+// not report the property. These helpers keep the previous behaviour of
+// exporting such properties as 0.
+func derefInt(v *int) float64 {
+	if v == nil {
+		return 0
+	}
+	return float64(*v)
+}
+
+func derefUint(v *uint) float64 {
+	if v == nil {
+		return 0
+	}
+	return float64(*v)
+}
+
+func derefFloat32(v *float32) float64 {
+	if v == nil {
+		return 0
+	}
+	return float64(*v)
+}
+
+func derefFloat64(v *float64) float64 {
+	if v == nil {
+		return 0
+	}
+	return *v
 }

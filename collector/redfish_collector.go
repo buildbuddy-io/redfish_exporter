@@ -10,8 +10,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	gofish "github.com/stmcginnis/gofish"
-	gofishcommon "github.com/stmcginnis/gofish/common"
-	redfish "github.com/stmcginnis/gofish/redfish"
+	redfish "github.com/stmcginnis/gofish/schemas"
 )
 
 // Metric name parts.
@@ -134,7 +133,7 @@ func newRedfishClient(host string, username string, password string) (*gofish.AP
 	return redfishClient, nil
 }
 
-func parseCommonStatusHealth(status gofishcommon.Health) (float64, bool) {
+func parseCommonStatusHealth(status redfish.Health) (float64, bool) {
 	if bytes.Equal([]byte(status), []byte("OK")) {
 		return float64(1), true
 	} else if bytes.Equal([]byte(status), []byte("Warning")) {
@@ -145,7 +144,7 @@ func parseCommonStatusHealth(status gofishcommon.Health) (float64, bool) {
 	return float64(0), false
 }
 
-func parseCommonStatusState(status gofishcommon.State) (float64, bool) {
+func parseCommonStatusState(status redfish.State) (float64, bool) {
 
 	if bytes.Equal([]byte(status), []byte("")) {
 		return float64(0), false

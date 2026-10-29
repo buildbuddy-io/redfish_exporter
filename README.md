@@ -138,6 +138,7 @@ FlxPeters forked the original exporter for several reasons:
 BuildBuddy forked FlxPeters' version to add:
 
 - Configurable collector filtering: Enable/disable specific collectors (chassis, system, manager) via config file, both globally and per-host. This significantly speeds up scrapes when only PSU/power metrics are needed.
+- PowerSubsystem support: Power supply metrics are read from `Chassis/{id}/PowerSubsystem/PowerSupplies` when a BMC no longer exposes the deprecated `Chassis/{id}/Power` resource (Redfish 2020.4+, e.g. recent Supermicro firmware). Metric names and labels are unchanged.
 
 ## Acknowledgement
 

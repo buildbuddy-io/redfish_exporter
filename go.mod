@@ -6,8 +6,9 @@ require (
 	github.com/go-kit/log v0.2.1
 	github.com/golangci/golangci-lint v1.58.1
 	github.com/prometheus/client_golang v1.19.1
+	github.com/prometheus/client_model v0.5.0
 	github.com/prometheus/exporter-toolkit v0.7.2
-	github.com/stmcginnis/gofish v0.15.0
+	github.com/stmcginnis/gofish v0.27.1-0.20261026130946-d7d356af0d92
 	github.com/stretchr/testify v1.9.0
 	gopkg.in/yaml.v2 v2.4.0
 )
@@ -128,7 +129,6 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/polyfloyd/go-errorlint v1.5.1 // indirect
-	github.com/prometheus/client_model v0.5.0 // indirect
 	github.com/prometheus/common v0.48.0 // indirect
 	github.com/prometheus/procfs v0.12.0 // indirect
 	github.com/quasilyte/go-ruleguard v0.4.2 // indirect
